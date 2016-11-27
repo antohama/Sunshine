@@ -1,8 +1,11 @@
 package com.example.android.sunshine.app;
 
+import android.content.Intent;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
 import android.text.format.Time;
@@ -13,6 +16,7 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.ListView;
 
@@ -27,12 +31,13 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.text.SimpleDateFormat;
-import java.util.Arrays;
+import java.util.ArrayList;
 
 public class ForecastFragment extends Fragment {
     private String mock = "{\"city\":{\"id\":5375480,\"name\":\"Mountain View\",\"coord\":{\"lon\":-122.083847,\"lat\":37.386051},\"country\":\"US\",\"population\":0},\"cod\":\"200\",\"message\":0.3371,\"cnt\":7,\"list\":[{\"dt\":1479668400,\"temp\":{\"day\":16.13,\"min\":8.78,\"max\":16.13,\"night\":8.78,\"eve\":14.45,\"morn\":16.13},\"pressure\":989.65,\"humidity\":97,\"weather\":[{\"id\":501,\"main\":\"Rain\",\"description\":\"moderate rain\",\"icon\":\"10d\"}],\"speed\":1.22,\"deg\":147,\"clouds\":56,\"rain\":3.44},{\"dt\":1479754800,\"temp\":{\"day\":11.57,\"min\":4.27,\"max\":13.32,\"night\":6.5,\"eve\":12.04,\"morn\":4.27},\"pressure\":993.63,\"humidity\":99,\"weather\":[{\"id\":500,\"main\":\"Rain\",\"description\":\"light rain\",\"icon\":\"10d\"}],\"speed\":1.47,\"deg\":306,\"clouds\":24,\"rain\":0.23},{\"dt\":1479841200,\"temp\":{\"day\":9.63,\"min\":4.02,\"max\":12.66,\"night\":5.44,\"eve\":11.99,\"morn\":5.28},\"pressure\":997.03,\"humidity\":98,\"weather\":[{\"id\":500,\"main\":\"Rain\",\"description\":\"light rain\",\"icon\":\"10d\"}],\"speed\":1.46,\"deg\":121,\"clouds\":48},{\"dt\":1479927600,\"temp\":{\"day\":12.31,\"min\":7.84,\"max\":12.7,\"night\":7.84,\"eve\":12.7,\"morn\":10.83},\"pressure\":1016.73,\"humidity\":0,\"weather\":[{\"id\":501,\"main\":\"Rain\",\"description\":\"moderate rain\",\"icon\":\"10d\"}],\"speed\":2.96,\"deg\":319,\"clouds\":64,\"rain\":11.6},{\"dt\":1480014000,\"temp\":{\"day\":11.19,\"min\":5.78,\"max\":12.83,\"night\":8.39,\"eve\":12.83,\"morn\":5.78},\"pressure\":1021.82,\"humidity\":0,\"weather\":[{\"id\":800,\"main\":\"Clear\",\"description\":\"clear sky\",\"icon\":\"01d\"}],\"speed\":1.51,\"deg\":133,\"clouds\":26},{\"dt\":1480100400,\"temp\":{\"day\":12.06,\"min\":8.75,\"max\":13.42,\"night\":9.82,\"eve\":13.42,\"morn\":8.75},\"pressure\":1017.94,\"humidity\":0,\"weather\":[{\"id\":501,\"main\":\"Rain\",\"description\":\"moderate rain\",\"icon\":\"10d\"}],\"speed\":3.6,\"deg\":174,\"clouds\":73,\"rain\":8.08},{\"dt\":1480186800,\"temp\":{\"day\":12.14,\"min\":9.97,\"max\":13.6,\"night\":13.34,\"eve\":13.6,\"morn\":9.97},\"pressure\":1016.9,\"humidity\":0,\"weather\":[{\"id\":501,\"main\":\"Rain\",\"description\":\"moderate rain\",\"icon\":\"10d\"}],\"speed\":2.96,\"deg\":182,\"clouds\":78,\"rain\":10.66}]}";
     private ArrayAdapter<String> adapter;
     private ListView listView;
+    private String TAG = "WEATHER_INFO";
 
     public ForecastFragment() {
     }
@@ -46,12 +51,32 @@ public class ForecastFragment extends Fragment {
     @Nullable
     @Override
     public View onCreateView(LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
+        adapter = new ArrayAdapter<>(
+                getActivity(),
+                R.layout.list_item_forecast,
+                R.id.list_item_forecast_textview,
+                new ArrayList<String>());
+
         View rootView = inflater.inflate(R.layout.fragment_main, container, false);
-        String[] list = new String[]{"Today - Sunny", "Tomorrow - Rainy", "Weds - Cloudy"};
 
         listView = (ListView) rootView.findViewById(R.id.listview_forecast);
+        listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> adapterView, View view, int i, long l) {
+                Intent intent = new Intent(getActivity(), DetailActivity.class);
+                intent.putExtra(Intent.EXTRA_TEXT, adapter.getItem(i));
+                startActivity(intent);
+            }
+        });
+        listView.setAdapter(adapter);
 
         return rootView;
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        //updateWeather();
     }
 
     @Override
@@ -63,9 +88,17 @@ public class ForecastFragment extends Fragment {
     public boolean onOptionsItemSelected(MenuItem item) {
         int id = item.getItemId();
         if (id == R.id.action_refresh) {
-            new FetchWeatherTask().execute("94043");
+            updateWeather();
         }
         return true;
+    }
+
+    private void updateWeather() {
+        FetchWeatherTask weatherTask = new FetchWeatherTask();
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getActivity());
+        String location = prefs.getString(getString(R.string.pref_location_key),
+                getString(R.string.pref_location_default));
+        weatherTask.execute(location);
     }
 
     public class FetchWeatherTask extends AsyncTask<String, Void, String[]> {
@@ -76,6 +109,16 @@ public class ForecastFragment extends Fragment {
         }
 
         private String formatHighLows(double high, double low) {
+            SharedPreferences sharedPrefs =
+                    PreferenceManager.getDefaultSharedPreferences(getActivity());
+            String unitType = sharedPrefs.getString(getString(R.string.pref_units_key), getString(R.string.pref_units_metric));
+
+            if (unitType.equals(getString(R.string.pref_units_imperial))) {
+                high = (high * 1.8) + 32;
+                low = (low * 1.8) + 32;
+            } else if (!unitType.equals(getString(R.string.pref_units_metric))) {
+                Log.d(TAG, "Unit type nont found: " + unitType);
+            }
             return String.valueOf(high) + "/" + String.valueOf(low);
         }
 
@@ -83,7 +126,12 @@ public class ForecastFragment extends Fragment {
         protected String[] doInBackground(String... zip) {
             // If there's no zip code, there's nothing to look up.  Verify size of params.
             if (zip.length == 0) {
-                return null;
+                try {
+                    return getWeatherDataFromJson(mock, 7);
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                    return null;
+                }
             }
 
             // These two need to be declared outside the try/catch
@@ -176,6 +224,7 @@ public class ForecastFragment extends Fragment {
             final String OWM_MAX = "max";
             final String OWM_MIN = "min";
             final String OWM_DESCRIPTION = "main";
+            Log.d("TEST", "getWeatherDataFromJson: " + forecastJsonStr + " \n " + numDays + " days");
 
             JSONObject forecastJson = new JSONObject(forecastJsonStr);
             JSONArray weatherArray = forecastJson.getJSONArray(OWM_LIST);
@@ -217,12 +266,11 @@ public class ForecastFragment extends Fragment {
         @Override
         protected void onPostExecute(String[] strings) {
             super.onPostExecute(strings);
-            adapter = new ArrayAdapter<>(
-                    getActivity(),
-                    R.layout.list_item_forecast,
-                    R.id.list_item_forecast_textview,
-                    Arrays.asList(strings));
-            listView.setAdapter(adapter);
+            adapter.clear();
+            for (String string : strings) {
+                adapter.add(string);
+            }
+            adapter.notifyDataSetChanged();
         }
     }
 
